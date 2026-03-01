@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.bankrate.com)",
+      "WebSearch",
+      "Bash(npx playwright:*)"
+    ]
+  }
+}
