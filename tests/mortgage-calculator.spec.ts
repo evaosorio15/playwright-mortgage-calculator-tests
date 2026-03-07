@@ -268,6 +268,125 @@ test.describe('Bankrate Mortgage Calculator', () => {
     });
   });
 
+  // ── 7. Amortization Tab ────────────────────────────────────────────────────
+  //
+  // The Amortization tab is reached by clicking [role="tab"][id="2"] (labelled
+  // "Amortization"). The tab panel shows four summary values in a grid with two
+  // distinct DOM shapes:
+  //
+  //   Loan amount (has tooltip):
+  //     <div class="mt-5">
+  //       <div> <span class="text-gray-700">Loan amount</span> <Tooltip /> </div>
+  //       <div class="type-heading-three">$340,000</div>
+  //     </div>
+  //
+  //   Other three items (no tooltip):
+  //     <div>
+  //       <p class="text-gray-700 ... mt-5 ...">Total interest paid</p>
+  //       <div class="type-heading-three">$431,158</div>
+  //     </div>
+  //     NOTE: mt-5 is a class on the <p> label, NOT on the container <div>.
+  //
+  // Tests use a fixed rate (7%) with the default home price and default 20%
+  // down payment ($425 k − $85 k = $340 k loan) so assertions are
+  // deterministic. Because homePrice is NOT changed, Vue's internal homePrice
+  // stays at the confirmed default — the homePrice-lock issue (KEY BEHAVIOUR
+  // #4) does not apply here.
+  //
+  // Expected values at 7% / 30 yr on $340 k:
+  //   Loan amount      $340,000
+  //   Total interest   ~$474,000  (360 × $2,262 P&I − $340 k)
+  //   Total cost       ~$814,000  (loan + interest)
+  //   Payoff date      <month> 2056  (current year + 30 years)
+
+  test.describe('7. Amortization Tab', () => {
+    /**
+     * Return the value display element for an amortization summary item.
+     *
+     * Locates the label element (p.text-gray-700 or span.text-gray-700) by
+     * its text, then walks up the ancestor chain via XPath to find the first
+     * enclosing <div> that contains a div.type-heading-three descendant, and
+     * returns that descendant. This handles both DOM shapes described above.
+     */
+    function amortValue(page: Page, label: string | RegExp) {
+      return page
+        .locator('p.text-gray-700, span.text-gray-700')
+        .filter({ hasText: label })
+        .first()
+        .locator('xpath=ancestor::div[.//div[contains(@class,"type-heading-three")]][1]//div[contains(@class,"type-heading-three")][1]');
+    }
+
+    /**
+     * Fill a known interest rate, click Update (waiting for payment to
+     * stabilise so all async API calls are complete), then switch to the
+     * Amortization tab and wait for its content to render.
+     */
+    async function setupAmortTab(page: Page): Promise<void> {
+      await clearAndFill(page, SEL.interestRate, '7');
+      await page.locator(SEL.loanTerm).selectOption({ label: '30 years' });
+      await clickUpdate(page);
+      // Stable payment = all server-side async calls (property tax, rate
+      // lookups) have completed. Safe to switch tabs after this.
+      await readStablePayment(page);
+      await page.getByRole('tab', { name: 'Amortization' }).click();
+      // Loan amount is the first summary value rendered; use it as a
+      // readiness gate before asserting any other value.
+      await expect(amortValue(page, /Loan amount/i)).toBeVisible({ timeout: 8000 });
+    }
+
+    test('loan amount equals home price minus down payment', async ({ page }) => {
+      // Read the form inputs BEFORE switching tabs so the expected value is
+      // derived from the calculator's own inputs, not hard-coded.
+      const homePrice = parseAmount(await page.locator(SEL.homePrice).inputValue());
+      const dpDollar  = parseAmount(await page.locator(SEL.dpDollar).inputValue());
+      const expectedLoan = homePrice - dpDollar; // 425,000 − 85,000 = 340,000
+
+      await setupAmortTab(page);
+
+      // The amortization tab must display exactly the principal borrowed.
+      const displayed = parseAmount(await amortValue(page, /Loan amount/i).textContent());
+      expect(displayed).toBe(expectedLoan);
+    });
+
+    test('total interest paid is within the expected range for a 7%, 30-year $340k loan', async ({ page }) => {
+      // At 7% / 30 yr on $340 k: monthly P&I ≈ $2,263 → total paid ≈ $814,450
+      // → total interest ≈ $474,450. Allow a ±$30 k window to absorb any
+      // rounding differences in the amortization schedule.
+      await setupAmortTab(page);
+
+      const interest = parseAmount(await amortValue(page, /Total interest paid/i).textContent());
+      expect(interest).toBeGreaterThan(440_000);
+      expect(interest).toBeLessThan(510_000);
+    });
+
+    test('total cost of loan equals loan amount plus total interest paid', async ({ page }) => {
+      // This verifies the calculator's own arithmetic, not an external formula.
+      // All three values are read from the same tab panel and compared.
+      await setupAmortTab(page);
+
+      const loanAmount    = parseAmount(await amortValue(page, /Loan amount/i).textContent());
+      const totalInterest = parseAmount(await amortValue(page, /Total interest paid/i).textContent());
+      const totalCost     = parseAmount(await amortValue(page, /Total cost of loan/i).textContent());
+
+      // The calculator displays all values as whole dollars, so the sum must
+      // be exact. A ±$1 allowance covers any display-level rounding.
+      expect(totalCost).toBeCloseTo(loanAmount + totalInterest, 0);
+    });
+
+    test('payoff date year matches current year plus 30-year loan term', async ({ page }) => {
+      await setupAmortTab(page);
+
+      // Displayed as "Mon YYYY" (e.g. "Mar 2056"). Extract the trailing year.
+      const payoffText = (await amortValue(page, /Payoff date/i).textContent())?.trim() ?? '';
+      const yearMatch  = payoffText.match(/(\d{4})$/);
+      expect(yearMatch, `Payoff date "${payoffText}" should end with a 4-digit year`).toBeTruthy();
+
+      const displayedYear = Number(yearMatch![1]);
+      const expectedYear  = new Date().getFullYear() + 30; // e.g. 2026 + 30 = 2056
+      expect(displayedYear).toBe(expectedYear);
+    });
+  });
+
   // ── 6. Input Validation ────────────────────────────────────────────────────
 
   test.describe('6. Input Validation', () => {
