@@ -11,7 +11,7 @@
 
 ## About
 
-This project is an end-to-end test suite targeting the [Bankrate Mortgage Calculator](https://www.bankrate.com/mortgages/mortgage-calculator/) — a client-side rendered Vue.js application with async server calls, reactive state, and a cookie consent overlay. The tests validate core calculator behaviors across 6 functional areas and run on all three major browser engines.
+This project is an end-to-end test suite targeting the [Bankrate Mortgage Calculator](https://www.bankrate.com/mortgages/mortgage-calculator/) — a client-side rendered Vue.js application with async server calls, reactive state, and a cookie consent overlay. The tests validate core calculator behaviors across 10 functional areas and run on all three major browser engines.
 
 Writing tests against a live third-party app you don't control is a different challenge from testing your own code. It requires reverse-engineering framework behavior, handling race conditions, and building resilient selectors that survive UI changes — skills that transfer directly to any large-scale test automation role.
 
@@ -30,12 +30,16 @@ Writing tests against a live third-party app you don't control is a different ch
 
 ## Features
 
-- **9 tests across 6 functional areas** — default state, payment calculation, down-payment sync, loan term toggle, interest rate change, and input validation
-- **Cross-browser** — runs on Chromium, Firefox, and WebKit with a single command
+- **36 tests across 10 functional areas** — calculator inputs, amortization summary, amortization schedule breakdown, CSV export, and printer-friendly version
+- **Cross-browser** — runs on Chromium, Firefox, and WebKit with a single command (108 test runs total)
 - **Vue.js reactivity-aware patterns** — discovered and worked around a non-obvious interaction between Playwright's `fill()`, Vue's internal state, and the app's live rate API; tests wait for reactive DOM updates as the synchronisation signal rather than using fixed delays
 - **Async-stable payment polling** — polls the payment display every 600 ms until two consecutive reads agree, correctly handling mid-flight server-side property tax and rate lookups
+- **Amortization schedule validation** — tests year-by-year and month-by-month rows, individual expand toggles, the expand/collapse-all toggle, and the first-payment date picker
+- **Extra payments coverage** — verifies that monthly, yearly, and one-time lump-sum extra payments reduce total interest, total cost, and payoff date as expected
+- **CSV download testing** — intercepts the browser download event, saves to a temp file, and asserts filename, headers, row count, and first/last row values
+- **`window.print()` interception** — mocks `window.print` before clicking the printer-friendly link to suppress the OS dialog while still asserting the call was made
 - **Cookie consent handling** — gracefully dismisses the OneTrust banner before interacting with the form
-- **Documented test commentary** — every non-obvious decision is explained inline, including the six key behaviours discovered through live testing
+- **Documented test commentary** — every non-obvious decision is explained inline, including the key behaviours discovered through live testing
 
 ---
 
@@ -90,17 +94,22 @@ An HTML report opens in your browser showing pass/fail status, durations, and tr
 
 ```
 ├── tests/
-│   └── mortgage-calculator.spec.ts   # All 9 tests, helpers, and selectors
-├── playwright.config.ts              # Browser projects, reporter, retry config
-└── package.json                      # Dependencies
+│   ├── helpers.ts                      # Shared selectors, constants, and helper functions
+│   ├── calculator-inputs.spec.ts       # Describes 1–6: inputs, payment calc, validation (10 tests)
+│   ├── amortization-summary.spec.ts    # Describes 7–8: summary values, extra payments (8 tests)
+│   ├── amortization-schedule.spec.ts   # Describe 9: schedule table, expand/collapse (12 tests)
+│   └── export-features.spec.ts         # Describes 10a–10b: CSV export, printer-friendly (7 tests)
+├── playwright.config.ts                # Browser projects, reporter, retry config
+└── package.json                        # Dependencies
 ```
 
-**`tests/mortgage-calculator.spec.ts`** is the heart of the project. It's structured around:
+**`tests/helpers.ts`** is the shared foundation — it exports:
 
 - A `SEL` constants object with all CSS selectors (documented and justified)
-- Shared helper functions (`clearAndFill`, `clickUpdate`, `readStablePayment`, `dismissCookieBanner`)
-- Six `test.describe` blocks, each testing one functional area
-- A header block documenting the six non-obvious calculator behaviours discovered during test development
+- Shared helper functions (`clearAndFill`, `clickUpdate`, `readStablePayment`, `dismissCookieBanner`, `parseAmount`)
+- Amortization-specific helpers (`amortValue`, `parsePayoffDate`, `payoffBefore`, `captureAmortBaseline`)
+
+Each spec file imports only what it needs from `helpers.ts` and focuses on a single area of the calculator, making it easy to find and extend tests without navigating a large monolith.
 
 ---
 
