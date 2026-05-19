@@ -1,3 +1,16 @@
+// ─── What is this file? ───────────────────────────────────────────────────────
+//
+// This file tests the amortization SCHEDULE — a table that breaks down every
+// single monthly payment across the life of the loan. While the amortization
+// SUMMARY (tested in amortization-summary.spec.ts) shows totals like "total
+// interest = $474,000", the SCHEDULE shows you month by month: in April 2026
+// you'll pay $X to principal and $Y to interest with $Z remaining balance.
+//
+// The schedule is initially collapsed into yearly rows for readability. You
+// can expand each year row to see its individual month rows.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { test, expect, type Page } from '@playwright/test';
 import {
   CALCULATOR_URL,
@@ -35,10 +48,25 @@ import {
 //   First payment datepicker (controls schedule start):
 //     .inline-table-container .vdp-datepicker input[type="text"]
 
+// These constants are CSS selectors for specific parts of the schedule table.
+// We define them as named constants (instead of repeating the raw strings) so
+// that if the page HTML ever changes, we only need to update the selector in
+// one place rather than hunting through the whole file.
+//
+//   SCHED_TABLE — the outer container of the schedule table itself
+//   YEAR_ROW    — a table row that represents one calendar year (e.g. "2026")
+//   MONTH_ROW   — a table row that represents one month (e.g. "Apr 2026")
+//   EXPAND_BTN  — the "Expand all / Collapse all" toggle button
 const SCHED_TABLE = '.inline-table-container .Table--numerical';
 const YEAR_ROW    = 'tr:has(th.py-2.pl-1.text-blue-600)';
 const MONTH_ROW   = 'tr.row';
 const EXPAND_BTN  = '#switch-one';
+
+// getYearRows and getMonthRows are small helper functions that return a
+// Playwright "locator" — essentially a live reference to a set of matching
+// elements in the browser. We call these functions in tests instead of
+// writing out the full locator chain each time, which keeps the test code
+// shorter and easier to read.
 
 function getYearRows(page: Page) {
   return page.locator(SCHED_TABLE).locator(YEAR_ROW);
@@ -163,6 +191,14 @@ test.describe('Bankrate Mortgage Calculator — Amortization Schedule', () => {
       test('interest exceeds principal in the first month (early amortization behaviour)', async ({ page }) => {
         // In the early payments of a standard 30-yr loan, the bulk of each payment
         // goes to interest. This confirms the amortization direction is correct.
+        //
+        // Why does interest exceed principal in early months?
+        // Your very first payment is calculated on the FULL loan balance — say
+        // $340,000. At 7% annual interest, that's about $1,983 of interest owed in
+        // month one alone. Since your total payment is only ~$2,263, only ~$280
+        // goes to reduce the balance. Over time, as your balance shrinks, the
+        // interest portion of each payment decreases and the principal portion grows
+        // — this is the core mechanic of how mortgage amortization works.
         await setupScheduleTab(page);
 
         const expandBtn = page.locator(EXPAND_BTN);
@@ -236,6 +272,10 @@ test.describe('Bankrate Mortgage Calculator — Amortization Schedule', () => {
       test('monthly rows are hidden by default', async ({ page }) => {
         await setupScheduleTab(page);
         // Month rows have display:none until expanded — Playwright treats them as not visible.
+        // Why hidden by default? The schedule for a 30-year loan has 360 month rows.
+        // Showing all of them at once would make the page extremely long and slow.
+        // Instead, the table collapses them under their year headings and you only
+        // expand the years you care about. This test confirms they start collapsed.
         await expect(getMonthRows(page).first()).not.toBeVisible();
       });
 
@@ -277,6 +317,14 @@ test.describe('Bankrate Mortgage Calculator — Amortization Schedule', () => {
 
         const expandBtn = page.locator(EXPAND_BTN);
         await expandBtn.scrollIntoViewIfNeeded();
+
+        // What is aria-checked?
+        // "aria-" attributes are accessibility attributes — extra information added
+        // to HTML elements so that screen readers (used by visually impaired users)
+        // can understand what a control is doing. "aria-checked" on a toggle/switch
+        // button signals whether the switch is currently ON (true) or OFF (false).
+        // Testing it here confirms that the expand/collapse state is correctly
+        // communicated to assistive technologies, not just visually.
 
         // Initially collapsed: aria-checked = "false".
         await expect(expandBtn).toHaveAttribute('aria-checked', 'false');

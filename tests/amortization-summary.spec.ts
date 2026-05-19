@@ -1,3 +1,24 @@
+// ─── What is this file? ───────────────────────────────────────────────────────
+//
+// This file tests the "Amortization" tab of the calculator. It verifies two
+// main areas:
+//
+//  1. The summary values shown at the top of the tab (loan amount, total
+//     interest paid, total cost, and payoff date).
+//
+//  2. The "extra payments" feature — where you can enter additional monthly,
+//     yearly, or one-time payments to pay off the loan faster.
+//
+// What is "amortization"?
+// Amortization is the process of paying off a loan gradually through regular
+// scheduled payments over time. Each payment covers two things: a portion of
+// the original amount you borrowed (called "principal") and the interest the
+// lender charges for lending you that money. In the early years of a mortgage,
+// most of each payment goes to interest; in the later years, most goes to
+// principal. By the end of the loan term, you've paid off the full balance.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { test, expect, type Page } from '@playwright/test';
 import {
   CALCULATOR_URL,
@@ -56,6 +77,14 @@ test.describe('Bankrate Mortgage Calculator — Amortization Summary', () => {
      * Fill a known interest rate, click Update (waiting for payment to
      * stabilise so all async API calls are complete), then switch to the
      * Amortization tab and wait for its content to render.
+     *
+     * Why is this a separate helper function?
+     * Every test in this section needs the same setup steps: set the interest
+     * rate, click Update, wait for results, and open the Amortization tab.
+     * Rather than copy-pasting those 5 lines into every test, we define them
+     * once here as a function and call it from each test. This makes the tests
+     * shorter and easier to read, and means we only need to fix this code in
+     * one place if the page structure ever changes.
      */
     async function setupAmortTab(page: Page): Promise<void> {
       await clearAndFill(page, SEL.interestRate, '7');
@@ -159,6 +188,12 @@ test.describe('Bankrate Mortgage Calculator — Amortization Summary', () => {
      * Set deterministic inputs, navigate to the Amortization tab, and capture
      * the summary values BEFORE any extra payment is entered.
      * The returned baseline is used by every test as the comparison reference.
+     *
+     * "Deterministic" here means we set a specific known interest rate (7%)
+     * rather than using whatever the page happens to have. This makes the test
+     * results predictable and consistent regardless of when or where they run.
+     * If we left the rate at its default (which changes daily based on market
+     * data), the exact numbers would be different every day and hard to test.
      */
     async function setupAmortTabWithBaseline(page: Page): Promise<AmortBaseline> {
       await clearAndFill(page, SEL.interestRate, '7');
@@ -213,6 +248,13 @@ test.describe('Bankrate Mortgage Calculator — Amortization Summary', () => {
     // $200/month extra reduces the outstanding principal faster each month,
     // which lowers the interest accrued over the remaining loan life, reduces
     // the total cost, and shortens the loan term (earlier payoff).
+    //
+    // Why do extra payments save so much money?
+    // Mortgage interest is calculated on the remaining balance. Every time you
+    // make an extra payment, it reduces that balance directly — which means
+    // EVERY future payment will have slightly less interest charged on it, and
+    // slightly more going to principal. This snowball effect compounds over
+    // 30 years and can save tens of thousands of dollars in total interest.
 
     test('extra monthly payment of $200 reduces interest, total cost, and moves payoff date earlier', async ({ page }) => {
       const baseline = await setupAmortTabWithBaseline(page);
