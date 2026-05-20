@@ -1,3 +1,15 @@
+// ─── What is this file? ───────────────────────────────────────────────────────
+//
+// This is the first group of tests. It checks that the calculator's basic input
+// fields work correctly: loading the page, entering a home price, switching loan
+// terms, changing the interest rate, and handling unusual inputs like zero or
+// negative numbers.
+//
+// Each "test" below describes ONE specific thing the calculator should do. If
+// any test fails, it means that feature is broken or behaving unexpectedly.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { test, expect } from '@playwright/test';
 import {
   CALCULATOR_URL,
@@ -9,10 +21,22 @@ import {
   parseAmount,
 } from './helpers';
 
+// test.describe() groups related tests together under a shared name. It's like a
+// folder: all the tests inside it are related to the same feature or page area.
 test.describe('Bankrate Mortgage Calculator — Calculator Inputs', () => {
+
+  // test.beforeEach() runs the code inside it BEFORE every single test in this
+  // describe block. It's used for setup steps that every test needs — in this
+  // case, opening the website and dismissing the cookie banner. This way we
+  // don't have to repeat those steps inside every individual test.
   test.beforeEach(async ({ page }) => {
+    // page.goto() opens a URL in the browser. 'waitUntil: domcontentloaded' means
+    // "wait until the page's HTML structure is ready" (but not necessarily all
+    // images and scripts — we separately wait for the specific element we need).
     await page.goto(CALCULATOR_URL, { waitUntil: 'domcontentloaded' });
     // Wait for the Vue app to hydrate and render the calculator form.
+    // We use toBeVisible() here as a readiness check — if this passes, we know
+    // the calculator has fully rendered and we're safe to proceed.
     await expect(page.locator(SEL.homePrice)).toBeVisible({ timeout: 20_000 });
     await dismissCookieBanner(page);
   });
@@ -21,6 +45,9 @@ test.describe('Bankrate Mortgage Calculator — Calculator Inputs', () => {
 
   test.describe('1. Default State', () => {
     test('page loads and the calculator is visible with default values pre-populated', async ({ page }) => {
+      // expect(...).toBeVisible() checks that the element actually appears on
+      // screen. If it's hidden, missing, or hasn't rendered yet, this assertion
+      // fails and the test stops here with a clear error message.
       await expect(page.locator(SEL.calculator)).toBeVisible();
 
       // All core inputs are rendered.
@@ -31,6 +58,10 @@ test.describe('Bankrate Mortgage Calculator — Calculator Inputs', () => {
       await expect(page.locator(SEL.dpPercent)).toBeVisible();
 
       // Default home price is a positive number (e.g. 425,000).
+      // inputValue() reads the current text inside the input field as a string.
+      // parseAmount() strips the formatting (commas, etc.) to get a plain number.
+      // toBeGreaterThan(0) checks that the result is a positive number — we just
+      // want to confirm the field has SOME valid default value, not test a specific one.
       const homePrice = parseAmount(await page.locator(SEL.homePrice).inputValue());
       expect(homePrice).toBeGreaterThan(0);
 
@@ -43,6 +74,7 @@ test.describe('Bankrate Mortgage Calculator — Calculator Inputs', () => {
       expect(dpPct).toBeGreaterThan(0);
 
       // Monthly payment is already displayed with a dollar sign.
+      // The calculator shows a result immediately on page load using default values.
       await expect(page.locator(SEL.monthlyPayment).first()).toBeVisible();
       await expect(page.locator(SEL.monthlyPayment).first()).toContainText('$');
     });
@@ -63,6 +95,13 @@ test.describe('Bankrate Mortgage Calculator — Calculator Inputs', () => {
       // new price and auto-update dpDollar to 20 % × $300 k = $60 k.
       // This ensures Vue's internal homePrice is $300 k before Update is
       // clicked (see KEY BEHAVIOUR #4).
+      //
+      // Why 'await' before almost every line?
+      // Most Playwright actions — clicking, filling, waiting — are "asynchronous":
+      // they take some amount of time to complete. The 'await' keyword tells
+      // JavaScript to pause and wait for that action to fully finish before
+      // moving to the next line. Without 'await', the code would run ahead
+      // instantly and try to check results before the browser has done anything.
       await clearAndFill(page, SEL.homePrice, '300000');
       await expect(page.locator(SEL.dpDollar)).toHaveValue(/60,?000/, { timeout: 5000 });
       await page.locator(SEL.loanTerm).selectOption({ label: '30 years' });
@@ -73,6 +112,10 @@ test.describe('Bankrate Mortgage Calculator — Calculator Inputs', () => {
       // P&I = $1,597. Adding auto-estimated Denver taxes ($198) and insurance
       // ($66) gives ~$1,861. Poll until the payment stabilises — the calculator
       // makes async server calls that can briefly show an intermediate value.
+      //
+      // We use a range (≥1597, ≤2500) rather than an exact number because the
+      // calculator adds server-side estimates for property tax and insurance that
+      // vary slightly. We just want to confirm the result is in the right ballpark.
       const payment = parseAmount(await readStablePayment(page));
       expect(payment).toBeGreaterThanOrEqual(1597); // at minimum, P&I only
       expect(payment).toBeLessThanOrEqual(2500);    // P&I + generous fee headroom
@@ -137,6 +180,11 @@ test.describe('Bankrate Mortgage Calculator — Calculator Inputs', () => {
       const value15 = parseAmount(await readStablePayment(page));
 
       // A 15-year loan repays the same principal in half the time → higher payment.
+      // Think about it this way: if you borrow $240,000 and want to pay it back in
+      // 30 years, you split it into 360 smaller payments. If you want to pay it back
+      // in only 15 years, you split it into 180 payments — each one must be larger
+      // to cover the same principal in half as many months. The test confirms this
+      // mathematically expected relationship holds in the actual calculator.
       expect(value15).toBeGreaterThan(value30);
     });
   });
